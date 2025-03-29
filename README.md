@@ -5,7 +5,7 @@
   <b>Bundle your Rust applications for seamless cross-platform execution</b>
 
   <p></p>
-  <img src="https://ziadoua.github.io/m3-Markdown-Badges/badges/LicenceGPLv3/licencegplv31.svg"></img> <img src="https://ziadoua.github.io/m3-Markdown-Badges/badges/Rust/rust1.svg"></img> <img src="https://ziadoua.github.io/m3-Markdown-Badges/badges/Windows/windows1.svg"></img> <img src="https://ziadoua.github.io/m3-Markdown-Badges/badges/Linux/linux1.svg"></img>
+  <img src="https://ziadoua.github.io/m3-Markdown-Badges/badges/LicenceGPLv3/licencegplv31.svg"></img> <img src="https://ziadoua.github.io/m3-Markdown-Badges/badges/Rust/rust1.svg"></img> <img src="https://ziadoua.github.io/m3-Markdown-Badges/badges/Windows/windows1.svg"></img> <img src="https://ziadoua.github.io/m3-Markdown-Badges/badges/macOS/macos1.svg"></img> + GNU/Linux
 </div>
 
 ## 🚀 What is RustPack?
