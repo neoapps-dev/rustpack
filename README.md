@@ -1,6 +1,6 @@
 <div align="center">
   <img src="https://raw.githubusercontent.com/neoapps-dev/rustpack/main/assets/logo.png" alt="RustPack Logo" width="200"/>
-  <h5>Logo by <a href="https://github.com/syntaxspins">@syntaxspins></a></h5>
+  <h6>Logo by <a href="https://github.com/syntaxspins">@syntaxspins</a></h5>
 <h1>RustPack</h1>
   <b>Bundle your Rust applications for seamless cross-platform execution</b>
 
