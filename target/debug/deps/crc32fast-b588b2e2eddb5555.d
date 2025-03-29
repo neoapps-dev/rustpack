@@ -1,0 +1,10 @@
+C:\Users\LENOVO\rustpack\target\debug\deps\libcrc32fast-b588b2e2eddb5555.rmeta: C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\lib.rs C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\baseline.rs C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\combine.rs C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\specialized\mod.rs C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\table.rs C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\specialized\pclmulqdq.rs
+
+C:\Users\LENOVO\rustpack\target\debug\deps\crc32fast-b588b2e2eddb5555.d: C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\lib.rs C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\baseline.rs C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\combine.rs C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\specialized\mod.rs C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\table.rs C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\specialized\pclmulqdq.rs
+
+C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\lib.rs:
+C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\baseline.rs:
+C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\combine.rs:
+C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\specialized\mod.rs:
+C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\table.rs:
+C:\Users\LENOVO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\crc32fast-1.4.2\src\specialized\pclmulqdq.rs:
