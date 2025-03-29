@@ -4,7 +4,7 @@
 <h1>RustPack</h1>
   <b>Bundle your Rust applications for seamless cross-platform execution</b>
 
-  <img src="https://img.shields.io/badge/rust-stable-orange.svg"></img>
+  <img src="https://ziadoua.github.io/m3-Markdown-Badges/badges/LicenceGPLv3/licencegplv31.svg"></img><img src="https://ziadoua.github.io/m3-Markdown-Badges/badges/Rust/rust1.svg"></img><img src="https://ziadoua.github.io/m3-Markdown-Badges/badges/Windows/windows1.svg"></img><img src="https://ziadoua.github.io/m3-Markdown-Badges/badges/Linux/linux1.svg"></img>
 </div>
 
 ## 🚀 What is RustPack?
@@ -65,7 +65,7 @@ RustPack creates a self-extracting archive with a smart bootstrap script that:
 ## 📊 Supported Platforms
 
 - 🍎 macOS (x86_64, aarch64)
-- 🐧 Linux (x86_64, aarch64, arm, x86)
+- 🐧 GNU/Linux (x86_64, aarch64, arm, x86)
 - 🪟 Windows (x86_64, x86)
 
 ## 🤝 Contributing
