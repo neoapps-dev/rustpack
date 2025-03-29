@@ -81,3 +81,5 @@ Contributions are welcome! Feel free to open an issue or submit a pull request.
 ## 📝 License
 
 This project is licensed under the GNU GPL-3.0 License - see the [LICENSE](LICENSE) file for details.
+
+<img src="https://m3-markdown-badges.vercel.app/stars/1/1/neoapps-dev/rustpack"> <img src="https://m3-markdown-badges.vercel.app/issues/1/1/neoapps-dev/rustpack">
