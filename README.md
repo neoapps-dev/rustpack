@@ -1,6 +1,6 @@
 <div align="center">
   <img src="https://raw.githubusercontent.com/neoapps-dev/rustpack/main/assets/logo.png" alt="RustPack Logo" width="200"/>
-  <h6>Logo by <a href="https://github.com/syntaxspins">@syntaxspins</a></h5>
+  <h6>Logo by <a href="https://github.com/syntaxspin">@syntaxspin</a></h5>
 <h1>RustPack</h1>
   <b>Bundle your Rust applications for seamless cross-platform execution</b>
 
@@ -71,6 +71,11 @@ RustPack creates a self-extracting archive with a smart bootstrap script that:
 ## 🤝 Contributing
 
 Contributions are welcome! Feel free to open an issue or submit a pull request.
+
+## ❤️ Special Thanks
+
+- [The Rust Programming Language](https://rust-lang.org)
+- [SyntaxSpin](https://github.com/syntaxspin) for the logo :)
 
 ## 📝 License
 
