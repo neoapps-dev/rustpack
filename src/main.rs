@@ -24,6 +24,7 @@ use hmac::{Hmac, Mac};
 use base64::encode;
 use std::sync::Arc;
 use semver::Version;
+use toml;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -57,6 +58,25 @@ struct BuildConfig {
     debug_symbols: bool,
     profile: String,
     features: Vec<String>,
+    assets: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct RustPackConfig {
+    name: Option<String>,
+    output: Option<String>,
+    targets: Option<Vec<String>>,
+    strip: Option<bool>,
+    compress: Option<bool>,
+    lto: Option<String>,
+    profile: Option<String>,
+    features: Option<Vec<String>>,
+    assets: Option<Vec<String>>,
+    zip: Option<bool>,
+    no_default_features: Option<bool>,
+    watch: Option<bool>,
+    sign: Option<String>,
+    verbose: Option<bool>,
 }
 
 const BOOTSTRAP_SCRIPT: &str = r#"#!/bin/sh
@@ -88,6 +108,10 @@ elif [ "$ARCH" = "arm" ] || [ "$ARCH" = "armv7l" ]; then
     ARCH="arm"
 else
     ARCH="unknown"
+fi
+
+if [ -d "$TEMP_DIR/rustpack/assets" ]; then
+    export RUSTPACK_ASSETS_DIR="$TEMP_DIR/rustpack/assets"
 fi
 
 BINARY_PATH=$(jq -r --arg platform "$PLATFORM" --arg arch "$ARCH" '.targets[] | select(.platform == $platform and .arch == $arch) | .binary_path' "$TEMP_DIR/rustpack/info.json")
@@ -198,47 +222,73 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .long("name")
                 .help("Override package name"),
         )
+        .arg(
+            Arg::new("assets")
+                .long("assets")
+                .help("Assets to include in the package (comma-separated)")
+        )
         .get_matches();
 
     let project_path = matches.get_one::<String>("input").unwrap();
     let project_name = matches.get_one::<String>("name")
         .map(|s| s.to_string())
         .unwrap_or_else(|| get_project_name(project_path).unwrap_or_else(|_| "unknown".to_string()));
+        
+    let config = read_config_file(project_path)?;
+    let project_name = matches.get_one::<String>("name")
+        .map(|s| s.to_string())
+        .or_else(|| config.name.clone())
+        .unwrap_or_else(|| get_project_name(project_path).unwrap_or_else(|_| "unknown".to_string()));
     
     let projectname = format!("{}.rpack", project_name);
     let output_name = matches
         .get_one::<String>("output")
         .map(|s| s.to_string())
+        .or_else(|| config.output.clone())
         .unwrap_or(projectname);
 
     let targets = matches
         .get_one::<String>("targets")
         .map(|t| t.split(',').map(|s| s.trim().to_string()).collect::<Vec<_>>())
+        .or_else(|| config.assets.clone())
         .unwrap_or_else(|| vec![get_current_target()]);
+        
+    let assets = matches
+        .get_one::<String>("assets")
+        .map(|a| a.split(',').map(|s| s.trim().to_string()).collect())
+        .or_else(|| config.assets.clone())
+        .unwrap_or_else(Vec::new);
 
     let build_config = BuildConfig {
-        strip: matches.get_flag("strip"),
-        compress: matches.get_flag("compress"),
-        lto: Some(matches.get_one::<String>("lto").unwrap().clone()),
-        debug_symbols: !matches.get_flag("strip"),
-        profile: matches.get_one::<String>("profile").unwrap().clone(),
+        strip: matches.get_flag("strip") || config.strip.unwrap_or(false),
+        compress: matches.get_flag("compress") || config.compress.unwrap_or(false),
+        lto: Some(matches.get_one::<String>("lto").unwrap_or(&config.lto.clone().unwrap_or_else(|| "off".to_string())).clone()),
+        debug_symbols: !(matches.get_flag("strip") || config.strip.unwrap_or(false)),
+        profile: matches.get_one::<String>("profile")
+            .map(|s| s.to_string())
+            .or_else(|| config.profile.clone())
+            .unwrap_or_else(|| "release".to_string()),
         features: matches
             .get_one::<String>("features")
             .map(|f| f.split(',').map(|s| s.trim().to_string()).collect())
-            .unwrap_or([].to_vec()),
+            .or_else(|| config.features.clone())
+            .unwrap_or_else(Vec::new),
+        assets,
     };
 
-    let verbose = matches.get_flag("verbose");
+    let verbose = matches.get_flag("verbose") || config.verbose.unwrap_or(false);
+    let create_zip = matches.get_flag("zip") || config.zip.unwrap_or(false);
+    let watch_mode = matches.get_flag("watch") || config.watch.unwrap_or(false);
     
     if verbose {
         println!("{} Rust project: {}", "Packing".green(), project_path);
         println!("{} for targets: {:?}", "Building".green(), targets);
     }
 
-    if matches.get_flag("watch") {
+    if watch_mode {
         watch_and_build(project_path, &output_name, &targets, &build_config, verbose)?;
     } else {
-        build_package(project_path, &output_name, &targets, &build_config, verbose, matches.get_flag("zip"))?;
+        build_package(project_path, &output_name, &targets, &build_config, verbose, create_zip)?;
     }
 
     if verbose {
@@ -592,6 +642,8 @@ fn build_package(
             compatibility,
         });
     }
+    
+    copy_assets(project_path, &rustpack_dir, &build_config.assets, verbose)?;    
 
     let mut metadata = HashMap::new();
     metadata.insert("created_with".to_string(), "rustpack".to_string());
@@ -626,7 +678,7 @@ fn build_package(
     fs::write(rustpack_dir.join("info.json"), info_json)?;
 
     if create_zip {
-        create_zip_package(&temp_dir.path(), output_name)?;
+        create_zip_package(&temp_dir.path(), output_name)?;  
     } else {
         create_self_extracting_package(&temp_dir.path(), output_name)?;
     }
@@ -670,6 +722,60 @@ fn create_self_extracting_package(temp_dir: &Path, output_name: &str) -> Result<
     Ok(())
 }
 
+fn copy_assets(
+    project_path: &str,
+    rustpack_dir: &Path,
+    assets: &[String],
+    verbose: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if assets.is_empty() {
+        return Ok(());
+    }
+    
+    let assets_dir = rustpack_dir.join("assets");
+    fs::create_dir_all(&assets_dir)?;
+    
+    if verbose {
+        println!("{} assets", "Copying".blue());
+    }
+    
+    for asset in assets {
+        let src_path = Path::new(project_path).join(asset);
+        if !src_path.exists() {
+            return Err(format!("Asset not found: {}", asset).into());
+        }
+        
+        if src_path.is_dir() {
+            let dest_dir = assets_dir.join(asset);
+            fs::create_dir_all(&dest_dir)?;
+            
+            for entry in WalkDir::new(&src_path).into_iter().filter_map(|e| e.ok()) {
+                let rel_path = entry.path().strip_prefix(&src_path)?;
+                let dest_path = dest_dir.join(rel_path);
+                
+                if entry.file_type().is_dir() {
+                    fs::create_dir_all(&dest_path)?;
+                } else {
+                    if verbose {
+                        println!("  Copying asset: {}", rel_path.display());
+                    }
+                    fs::copy(entry.path(), &dest_path)?;
+                }
+            }
+        } else {
+            let file_name = src_path.file_name().unwrap();
+            let dest_path = assets_dir.join(file_name);
+            
+            if verbose {
+                println!("  Copying asset: {}", file_name.to_string_lossy());
+            }
+            fs::copy(&src_path, &dest_path)?;
+        }
+    }
+    
+    Ok(())
+}
+
 fn create_zip_package(temp_dir: &Path, output_name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let file = File::create(output_name)?;
     let mut zip = zip::ZipWriter::new(file);
@@ -698,6 +804,17 @@ fn create_zip_package(temp_dir: &Path, output_name: &str) -> Result<(), Box<dyn 
 
     zip.finish()?;
     Ok(())
+}
+
+fn read_config_file(project_path: &str) -> Result<RustPackConfig, Box<dyn std::error::Error>> {
+    let config_path = Path::new(project_path).join("RustPack.toml");
+    if !config_path.exists() {
+        return Ok(RustPackConfig::default());
+    }
+    
+    let config_content = fs::read_to_string(config_path)?;
+    let config: RustPackConfig = toml::from_str(&config_content)?;
+    Ok(config)
 }
 
 fn get_rust_version() -> String {

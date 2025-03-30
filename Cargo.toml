@@ -24,6 +24,7 @@ sha2 = "0.10"
 hmac = "0.12"
 base64 = "0.21"
 semver = "1.0"
+toml = "0.7"
 
 [profile.release]
 opt-level = 3
