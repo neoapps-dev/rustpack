@@ -452,9 +452,14 @@ codegen-units = 1
 
     let ext = if target.contains("windows") { ".exe" } else { "" };
     let binary_with_ext = format!("{}{}", project_name, ext);
-
+    let binary_path_with_ext = Path::new(project_path)
+        .join("target")
+        .join(target)
+        .join(&build_config.profile)
+        .join(format!("{}{}", project_name, ext));
+    
     let dest_path = bin_dir.join(&binary_with_ext);
-    fs::copy(&binary_path, &dest_path)?;
+    fs::copy(&binary_path_with_ext, &dest_path)?;
 
     if build_config.strip {
         if let Some(pb) = pb.clone() {
