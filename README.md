@@ -26,13 +26,10 @@ rustpack -i ./my-project -o my-awesome-app.rpack -t x86_64-apple-darwin,x86_64-p
 
 ## 🛠️ Installation
 
+RustPack is available on [crates.io](https://crates.io/crates/rustpack):
+
 ```bash
-git clone https://github.com/neoapps-dev/rustpack.git
-cd rustpack
-cargo build --release
-cd target/release
-pwd
-# add the printed path to $PATH
+cargo install rustpack
 ```
 
 ## 📋 Usage
