@@ -1,2 +1,4 @@
 target/
 rustpack.rpack
+test
+test.exe

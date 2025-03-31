@@ -131,8 +131,90 @@ else
     exit 1
 fi
 
+${UPDATE_SCRIPT}
+
+if [ "$1" = "--check-updates" ]; then
+    check_for_updates
+    exit $?
+fi
+
+if [ "$1" = "--update" ]; then
+    perform_update
+    exit $?
+fi
+
+if [ "$1" = "--replace-with-update" ]; then
+    if [ -n "$2" ]; then
+        mv "$0" "$2"
+        echo "Update completed successfully!"
+        exit 0
+    else
+        echo "Missing target path for update"
+        exit 1
+    fi
+fi
 exit 0
 __PAYLOAD_BEGINS__
+"#;
+
+const UPDATE_SCRIPT: &str = r#"
+check_for_updates() {
+    echo "Checking for updates..."
+    CURRENT_VERSION=$(jq -r '.version' "$RUSTPACK_DIR/info.json")
+    UPDATE_URL=$(jq -r '.metadata.update_url // empty' "$RUSTPACK_DIR/info.json")
+    if [ -z "$UPDATE_URL" ]; then
+        echo "No update URL configured."
+        return 1
+    fi
+    if command -v curl > /dev/null; then
+        VERSION_INFO=$(curl -s "$UPDATE_URL/version.json")
+    elif command -v wget > /dev/null; then
+        VERSION_INFO=$(wget -q -O - "$UPDATE_URL/version.json")
+    else
+        echo "No curl or wget found to check for updates."
+        return 1
+    fi
+    if [ -z "$VERSION_INFO" ]; then
+        echo "Could not fetch version information."
+        return 1
+    fi
+    LATEST_VERSION=$(echo "$VERSION_INFO" | jq -r '.version')
+    if [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
+        echo "Update available: $LATEST_VERSION (current: $CURRENT_VERSION)"
+        echo "Run with --update to download the latest version"
+        return 0
+    else
+        echo "You are running the latest version: $CURRENT_VERSION"
+        return 0
+    fi
+}
+
+perform_update() {
+    echo "Updating to the latest version..."
+    UPDATE_URL=$(jq -r '.metadata.update_url // empty' "$RUSTPACK_DIR/info.json")
+    if [ -z "$UPDATE_URL" ]; then
+        echo "No update URL configured."
+        return 1
+    fi
+    DOWNLOAD_URL="$UPDATE_URL/latest.rpack"
+    TEMP_FILE=$(mktemp)
+    if command -v curl > /dev/null; then
+        curl -L -o "$TEMP_FILE" "$DOWNLOAD_URL"
+    elif command -v wget > /dev/null; then
+        wget -O "$TEMP_FILE" "$DOWNLOAD_URL"
+    else
+        echo "No curl or wget found to download update."
+        return 1
+    fi
+    if [ $? -ne 0 ]; then
+        echo "Failed to download update."
+        return 1
+    fi
+    chmod +x "$TEMP_FILE"
+    echo "Update downloaded. Replacing current executable..."
+    "$TEMP_FILE" --replace-with-update "$0"
+    exit $?
+}
 "#;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -228,7 +310,91 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .long("assets")
                 .help("Assets to include in the package (comma-separated)")
         )
+        .arg(
+            Arg::new("update-url")
+                .long("update-url")
+                .help("URL for checking and downloading updates"),
+        )
+        .arg(
+            Arg::new("create-patch")
+                .long("create-patch")
+                .help("Create a binary patch between old and new versions")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("old-version")
+                .long("old-version")
+                .help("Path to the old version binary for patch creation"),
+        )
+        .arg(
+            Arg::new("patch-output")
+                .long("patch-output")
+                .help("Output path for the created patch file"),
+        )
+        .arg(
+            Arg::new("apply-patch")
+                .long("apply-patch")
+                .help("Apply a binary patch to update an existing binary")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("patch-file")
+            .long("patch-file")
+            .help("Path to the patch file to apply"),
+        )
         .get_matches();
+        
+    let env_config = load_env_config();
+    
+if matches.get_flag("create-patch") {
+    if let (Some(old_version), Some(patch_output)) = (
+        matches.get_one::<String>("old-version"),
+        matches.get_one::<String>("patch-output")
+    ) {
+        let new_version = matches.get_one::<String>("input").unwrap();
+        println!("Creating binary patch from {} to {}", old_version, new_version);
+        
+        if let Err(e) = create_binary_patch(
+            Path::new(old_version),
+            Path::new(new_version),
+            Path::new(patch_output)
+        ) {
+            eprintln!("Failed to create patch: {}", e);
+            std::process::exit(1);
+        }
+        
+        println!("Patch created successfully: {}", patch_output);
+        return Ok(());
+    } else {
+        eprintln!("When using --create-patch, both --old-version and --patch-output are required");
+        std::process::exit(1);
+    }
+}
+
+if matches.get_flag("apply-patch") {
+    if let (Some(patch_file), Some(output)) = (
+        matches.get_one::<String>("patch-file"),
+        matches.get_one::<String>("output")
+    ) {
+        let input = matches.get_one::<String>("input").unwrap();
+        println!("Applying patch {} to {} and saving as {}", patch_file, input, output);
+        
+        if let Err(e) = apply_binary_patch(
+            Path::new(input),
+            Path::new(patch_file),
+            Path::new(output)
+        ) {
+            eprintln!("Failed to apply patch: {}", e);
+            std::process::exit(1);
+        }
+        
+        println!("Patch applied successfully: {}", output);
+        return Ok(());
+    } else {
+        eprintln!("When using --apply-patch, both --patch-file and --output are required");
+        std::process::exit(1);
+    }
+}
 
     let project_path = matches.get_one::<String>("input").unwrap();
     let project_name = matches.get_one::<String>("name")
@@ -259,23 +425,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|a| a.split(',').map(|s| s.trim().to_string()).collect())
         .or_else(|| config.assets.clone())
         .unwrap_or_else(Vec::new);
-
-    let build_config = BuildConfig {
-        strip: matches.get_flag("strip") || config.strip.unwrap_or(false),
-        compress: matches.get_flag("compress") || config.compress.unwrap_or(false),
-        lto: Some(matches.get_one::<String>("lto").unwrap_or(&config.lto.clone().unwrap_or_else(|| "off".to_string())).clone()),
-        debug_symbols: !(matches.get_flag("strip") || config.strip.unwrap_or(false)),
-        profile: matches.get_one::<String>("profile")
-            .map(|s| s.to_string())
-            .or_else(|| config.profile.clone())
-            .unwrap_or_else(|| "release".to_string()),
-        features: matches
-            .get_one::<String>("features")
-            .map(|f| f.split(',').map(|s| s.trim().to_string()).collect())
-            .or_else(|| config.features.clone())
-            .unwrap_or_else(Vec::new),
-        assets,
-    };
+let build_config = BuildConfig {
+    strip: matches.get_flag("strip") || config.strip.unwrap_or(env_config.strip),
+    compress: matches.get_flag("compress") || config.compress.unwrap_or(env_config.compress),
+    lto: Some(matches.get_one::<String>("lto").unwrap_or(&config.lto.clone().unwrap_or(env_config.lto.unwrap_or_else(|| "off".to_string()))).clone()),
+    debug_symbols: !(matches.get_flag("strip") || config.strip.unwrap_or(env_config.strip)),
+    profile: matches
+        .get_one::<String>("profile")
+        .map(|s| s.to_string())
+        .or_else(|| config.profile.clone())
+        .unwrap_or(env_config.profile),
+    features: matches
+        .get_one::<String>("features")
+        .map(|f| f.split(',').map(|s| s.trim().to_string()).collect())
+        .or_else(|| config.features.clone())
+        .unwrap_or(env_config.features),
+    assets: matches
+        .get_one::<String>("assets")
+        .map(|a| a.split(',').map(|s| s.trim().to_string()).collect())
+        .or_else(|| config.assets.clone())
+        .unwrap_or(env_config.assets),
+};
 
     let verbose = matches.get_flag("verbose") || config.verbose.unwrap_or(false);
     let create_zip = matches.get_flag("zip") || config.zip.unwrap_or(false);
@@ -511,6 +681,18 @@ codegen-units = 1
     
     let dest_path = bin_dir.join(&binary_with_ext);
     fs::copy(&binary_path_with_ext, &dest_path)?;
+    
+    if verbose {
+        if let Ok(size_info) = analyze_binary_size(&binary_path_with_ext) {
+            println!("Binary size analysis for {}:", target);
+            println!("  Total size: {} bytes", size_info.get("total").unwrap_or(&0));
+            for (section, size) in &size_info {
+                if section != "total" {
+                    println!("  {}: {} bytes", section, size);
+                }
+            }
+        }
+    }
 
     if build_config.strip {
         if let Some(pb) = pb.clone() {
@@ -645,6 +827,14 @@ fn build_package(
     }
     
     copy_assets(project_path, &rustpack_dir, &build_config.assets, verbose)?;    
+    if verbose {
+        println!("{} license file", "Detecting".blue());
+    }
+    if let Err(e) = detect_and_embed_license(project_path, &rustpack_dir) {
+        if verbose {
+            println!("{} Failed to embed license: {}", "Warning".yellow(), e);
+        }
+    }
 
     let mut metadata = HashMap::new();
     metadata.insert("created_with".to_string(), "rustpack".to_string());
@@ -663,6 +853,25 @@ fn build_package(
         "compression".to_string(),
         "auto_detection".to_string(),
     ];
+    
+    let dependencies = match analyze_dependencies(project_path) {
+        Ok(deps) => {
+            if verbose {
+                println!("{} Dependencies analyzed: {} found", "Info".blue(), deps.len());
+            }
+            deps
+        },
+        Err(e) => {
+            if verbose {
+                println!("{} Could not analyze dependencies: {}", "Warning".yellow(), e);
+            }
+            HashMap::new()
+        }
+    };
+    
+    for (name, version) in dependencies {
+        metadata.insert(format!("dependency_{}", name), version);
+    }
 
     let package_info = PackageInfo {
         name: project_name,
@@ -828,3 +1037,210 @@ fn get_rust_version() -> String {
         Err(_) => "unknown".to_string(),
     }
 }
+
+fn analyze_dependencies(project_path: &str) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+    let cargo_toml = Path::new(project_path).join("Cargo.toml");
+    let cargo_content = fs::read_to_string(cargo_toml)?;
+    let mut dependencies = HashMap::new();
+    let mut in_deps_section = false;
+    for line in cargo_content.lines() {
+        let trimmed = line.trim();
+        
+        if trimmed == "[dependencies]" {
+            in_deps_section = true;
+            continue;
+        } else if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_deps_section = false;
+            continue;
+        }
+        
+        if in_deps_section && !trimmed.is_empty() && !trimmed.starts_with('#') {
+            if let Some(eq_pos) = trimmed.find('=') {
+                let name = trimmed[..eq_pos].trim().to_string();
+                let version_part = trimmed[eq_pos + 1..].trim();
+                if version_part.starts_with('"') && version_part.ends_with('"') {
+                    let version = version_part.trim_matches('"').to_string();
+                    dependencies.insert(name, version);
+                } 
+                else if version_part.starts_with('{') {
+                    if let Some(ver_start) = trimmed.find("version") {
+                        if let Some(eq_start) = trimmed[ver_start..].find('=') {
+                            let ver_part = &trimmed[ver_start + eq_start + 1..];
+                            if let Some(quote_start) = ver_part.find('"') {
+                                if let Some(quote_end) = ver_part[quote_start + 1..].find('"') {
+                                    let version = ver_part[quote_start + 1..quote_start + 1 + quote_end].to_string();
+                                    dependencies.insert(name, version);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(dependencies)
+}
+
+fn detect_and_embed_license(project_path: &str, rustpack_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let license_files = [
+        "LICENSE", "LICENSE.txt", "LICENSE.md", 
+        "LICENCE", "LICENCE.txt", "LICENCE.md"
+    ];
+    
+    for license_file in license_files.iter() {
+        let license_path = Path::new(project_path).join(license_file);
+        if license_path.exists() {
+            let dest_path = rustpack_dir.join("LICENSE");
+            fs::copy(&license_path, &dest_path)?;
+            return Ok(());
+        }
+    }
+
+    let placeholder = "No license file detected in the original project.";
+    fs::write(rustpack_dir.join("LICENSE.note"), placeholder)?;
+    
+    Ok(())
+}
+
+fn analyze_binary_size(binary_path: &Path) -> Result<HashMap<String, usize>, Box<dyn std::error::Error>> {
+    let mut size_info = HashMap::new();
+    let metadata = fs::metadata(binary_path)?;
+    size_info.insert("total".to_string(), metadata.len() as usize);
+    let objdump_output = ProcessCommand::new("objdump")
+        .args(&["-h", &binary_path.to_string_lossy()])
+        .output();
+        
+    if let Ok(output) = objdump_output {
+        if output.status.success() {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            for line in output_str.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 4 && parts[0].starts_with(".") {
+                    if let Ok(size) = usize::from_str_radix(parts[2], 16) {
+                        size_info.insert(parts[0].to_string(), size);
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(size_info)
+}
+
+fn setup_auto_update(update_url: &str, package_info: &mut PackageInfo) {
+    package_info.metadata.insert("update_url".to_string(), update_url.to_string());
+    package_info.features.push("auto_update".to_string());
+}
+
+fn load_env_config() -> BuildConfig {
+    let strip = env::var("RUSTPACK_STRIP").map(|v| v == "1" || v == "true").unwrap_or(false);
+    let compress = env::var("RUSTPACK_COMPRESS").map(|v| v == "1" || v == "true").unwrap_or(false);
+    let lto = env::var("RUSTPACK_LTO").ok();
+    let debug_symbols = env::var("RUSTPACK_DEBUG_SYMBOLS").map(|v| v == "1" || v == "true").unwrap_or(true);
+    let profile = env::var("RUSTPACK_PROFILE").unwrap_or_else(|_| "release".to_string());
+    
+    let features = env::var("RUSTPACK_FEATURES")
+        .map(|f| f.split(',').map(|s| s.trim().to_string()).collect())
+        .unwrap_or_else(|_| Vec::new());
+        
+    let assets = env::var("RUSTPACK_ASSETS")
+        .map(|a| a.split(',').map(|s| s.trim().to_string()).collect())
+        .unwrap_or_else(|_| Vec::new());
+        
+    BuildConfig {
+        strip,
+        compress,
+        lto,
+        debug_symbols,
+        profile,
+        features,
+        assets,
+    }
+}
+
+fn create_binary_patch(old_path: &Path, new_path: &Path, patch_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let mut old_file = File::open(old_path)?;
+    let mut new_file = File::open(new_path)?;
+    let mut old_data = Vec::new();
+    let mut new_data = Vec::new();
+    old_file.read_to_end(&mut old_data)?;
+    new_file.read_to_end(&mut new_data)?;
+    let mut patch_entries = Vec::new();
+    let mut offset = 0;
+    
+    while offset < new_data.len() {
+        let mut diff_start = offset;
+        while diff_start < new_data.len() {
+            if diff_start >= old_data.len() || new_data[diff_start] != old_data[diff_start] {
+                break;
+            }
+            diff_start += 1;
+        }
+        
+        if diff_start >= new_data.len() {
+            break;
+        }
+        let mut diff_end = diff_start + 1;
+        while diff_end < new_data.len() {
+            if diff_end < old_data.len() && new_data[diff_end] == old_data[diff_end] {
+                let mut matches = 1;
+                while matches < 4 && diff_end + matches < new_data.len() && 
+                      diff_end + matches < old_data.len() && 
+                      new_data[diff_end + matches] == old_data[diff_end + matches] {
+                    matches += 1;
+                }
+                
+                if matches >= 4 {
+                    break;
+                }
+            }
+            diff_end += 1;
+        }
+
+        let diff_data = &new_data[diff_start..diff_end];
+        patch_entries.push((diff_start, diff_end - diff_start, diff_data.to_vec()));
+        
+        offset = diff_end;
+    }
+    let mut patch_file = File::create(patch_path)?;
+    for (offset, length, data) in patch_entries {
+        writeln!(patch_file, "{}:{}:{}", offset, length, 
+                base64::encode(data))?;
+    }
+    
+    Ok(())
+}
+
+fn apply_binary_patch(original_path: &Path, patch_path: &Path, output_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let mut original_file = File::open(original_path)?;
+    let mut original_data = Vec::new();
+    original_file.read_to_end(&mut original_data)?;
+    let patch_content = fs::read_to_string(patch_path)?;
+    let mut output_data = original_data.clone();
+    
+    for line in patch_content.lines() {
+        let parts: Vec<&str> = line.splitn(3, ':').collect();
+        if parts.len() != 3 {
+            continue;
+        }
+        let offset = parts[0].parse::<usize>()?;
+        let length = parts[1].parse::<usize>()?;
+        let data = base64::decode(parts[2])?;
+        if offset + length > output_data.len() {
+            output_data.resize(offset + length, 0);
+        }
+        
+        for (i, byte) in data.iter().enumerate() {
+            if offset + i < output_data.len() {
+                output_data[offset + i] = *byte;
+            }
+        }
+    }
+
+    let mut output_file = File::create(output_path)?;
+    output_file.write_all(&output_data)?;
+    
+    Ok(())
+}
+
