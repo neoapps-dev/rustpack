@@ -144,7 +144,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .short('i')
                 .long("input")
                 .help("Path to the Rust project directory")
-                .required(true),
+                .required(false)
+                .default_value("."),
         )
         .arg(
             Arg::new("output")
