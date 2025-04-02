@@ -17,13 +17,10 @@ use chrono::Local;
 use notify::{Watcher, RecursiveMode, watcher};
 use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
-use std::thread;
 use zip::write::FileOptions;
 use sha2::{Sha256, Digest};
 use hmac::{Hmac, Mac};
 use base64::encode;
-use std::sync::Arc;
-use semver::Version;
 use toml;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -59,6 +56,7 @@ struct BuildConfig {
     profile: String,
     features: Vec<String>,
     assets: Vec<String>,
+    sign: String,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -79,6 +77,7 @@ struct RustPackConfig {
     verbose: Option<bool>,
 }
 
+// TODO: add windows bootstrap code or choose another lang (windows can use sh)
 const BOOTSTRAP_SCRIPT: &str = r#"#!/bin/sh
 PAYLOAD_LINE=$(awk '/^__PAYLOAD_BEGINS__/ { print NR + 1; exit 0; }' $0)
 TEMP_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t rustpack)
@@ -131,33 +130,6 @@ else
     exit 1
 fi
 
-${UPDATE_SCRIPT}
-
-if [ "$1" = "--check-updates" ]; then
-    check_for_updates
-    exit $?
-fi
-
-if [ "$1" = "--update" ]; then
-    perform_update
-    exit $?
-fi
-
-if [ "$1" = "--replace-with-update" ]; then
-    if [ -n "$2" ]; then
-        mv "$0" "$2"
-        echo "Update completed successfully!"
-        exit 0
-    else
-        echo "Missing target path for update"
-        exit 1
-    fi
-fi
-exit 0
-__PAYLOAD_BEGINS__
-"#;
-
-const UPDATE_SCRIPT: &str = r#"
 check_for_updates() {
     echo "Checking for updates..."
     CURRENT_VERSION=$(jq -r '.version' "$RUSTPACK_DIR/info.json")
@@ -215,6 +187,29 @@ perform_update() {
     "$TEMP_FILE" --replace-with-update "$0"
     exit $?
 }
+
+if [ "$1" = "--check-updates" ]; then
+    check_for_updates
+    exit $?
+fi
+
+if [ "$1" = "--update" ]; then
+    perform_update
+    exit $?
+fi
+
+if [ "$1" = "--replace-with-update" ]; then
+    if [ -n "$2" ]; then
+        mv "$0" "$2"
+        echo "Update completed successfully!"
+        exit 0
+    else
+        echo "Missing target path for update"
+        exit 1
+    fi
+fi
+exit 0
+__PAYLOAD_BEGINS__
 "#;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -397,10 +392,6 @@ if matches.get_flag("apply-patch") {
 }
 
     let project_path = matches.get_one::<String>("input").unwrap();
-    let project_name = matches.get_one::<String>("name")
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| get_project_name(project_path).unwrap_or_else(|_| "unknown".to_string()));
-        
     let config = read_config_file(project_path)?;
     let project_name = matches.get_one::<String>("name")
         .map(|s| s.to_string())
@@ -430,6 +421,11 @@ let build_config = BuildConfig {
     compress: matches.get_flag("compress") || config.compress.unwrap_or(env_config.compress),
     lto: Some(matches.get_one::<String>("lto").unwrap_or(&config.lto.clone().unwrap_or(env_config.lto.unwrap_or_else(|| "off".to_string()))).clone()),
     debug_symbols: !(matches.get_flag("strip") || config.strip.unwrap_or(env_config.strip)),
+    sign: matches
+        .get_one::<String>("sign")
+        .map(|s| s.to_string())
+        .or_else(|| config.sign.clone())
+        .unwrap_or(env_config.sign),
     profile: matches
         .get_one::<String>("profile")
         .map(|s| s.to_string())
@@ -891,6 +887,7 @@ fn build_package(
         create_zip_package(&temp_dir.path(), output_name)?;  
     } else {
         create_self_extracting_package(&temp_dir.path(), output_name)?;
+        sign_package(Path::new(output_name), &build_config.sign)?;
     }
 
     Ok(())
@@ -1139,7 +1136,7 @@ fn load_env_config() -> BuildConfig {
     let lto = env::var("RUSTPACK_LTO").ok();
     let debug_symbols = env::var("RUSTPACK_DEBUG_SYMBOLS").map(|v| v == "1" || v == "true").unwrap_or(true);
     let profile = env::var("RUSTPACK_PROFILE").unwrap_or_else(|_| "release".to_string());
-    
+    let sign = env::var("RUSTPACK_SIGN").unwrap_or_else(|_| "".to_string());
     let features = env::var("RUSTPACK_FEATURES")
         .map(|f| f.split(',').map(|s| s.trim().to_string()).collect())
         .unwrap_or_else(|_| Vec::new());
@@ -1156,6 +1153,7 @@ fn load_env_config() -> BuildConfig {
         profile,
         features,
         assets,
+        sign,
     }
 }
 
